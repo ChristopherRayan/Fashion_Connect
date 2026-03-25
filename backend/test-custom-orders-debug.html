@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Test - Custom Orders</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e9; color: #2e7d32; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+    <h1>Database Test - Custom Orders & Products</h1>
+    
+    <button onclick="testCustomOrders()">Test Custom Orders API</button>
+    <button onclick="testProducts()">Test Products API</button>
+    <button onclick="addProductReference()">Add Product Reference to Orders</button>
+    
+    <div id="results"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1';
+        
+        async function makeRequest(url, options = {}) {
+            try {
+                // Get token from localStorage if needed
+                const token = localStorage.getItem('authToken') || 'dummy-token';
+                
+                const response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        ...options.headers
+                    }
+                });
+                
+                const data = await response.json();
+                return { success: response.ok, data, status: response.status };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+        
+        function displayResult(title, result) {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `result ${result.success ? 'success' : 'error'}`;
+            resultDiv.innerHTML = `
+                <h3>${title}</h3>
+                <pre>${JSON.stringify(result, null, 2)}</pre>
+            `;
+            resultsDiv.appendChild(resultDiv);
+        }
+        
+        async function testCustomOrders() {
+            const result = await makeRequest(`${API_BASE}/custom-orders/designer-orders?page=1&limit=5`);
+            displayResult('Custom Orders API Test', result);
+        }
+        
+        async function testProducts() {
+            const result = await makeRequest(`${API_BASE}/products?page=1&limit=5`);
+            displayResult('Products API Test', result);
+        }
+        
+        async function addProductReference() {
+            displayResult('Adding Product Reference', { 
+                message: 'This would require admin access. Check console logs in backend for custom order data structure.' 
+            });
+        }
+    </script>
+</body>
+</html>

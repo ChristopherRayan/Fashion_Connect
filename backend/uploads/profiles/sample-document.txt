@@ -1,0 +1,2 @@
+This is a placeholder file to ensure the uploads/profiles directory exists.
+The actual document files would be uploaded by users during registration.

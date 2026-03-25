@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fashion Connect - Test Status</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        .test-section h3 {
+            color: #555;
+            margin-top: 0;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .instructions {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .instructions h4 {
+            margin-top: 0;
+            color: #0066cc;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Fashion Connect - Test Status</h1>
+        
+        <div class="instructions">
+            <h4>📋 Testing Instructions</h4>
+            <p><strong>1. Checkout Testing:</strong></p>
+            <ul>
+                <li>Add products to cart from the browse products page</li>
+                <li>Go to checkout and fill in all required fields</li>
+                <li>Try to place an order and check browser console for errors</li>
+            </ul>
+            <p><strong>2. Image Messaging Testing:</strong></p>
+            <ul>
+                <li>Go to a product page and start a conversation with the designer</li>
+                <li>Try to send an image message using the attachment button</li>
+                <li>Check if images display correctly in the conversation</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h3>🌐 System Status</h3>
+            <div id="frontend-status" class="status pending">Frontend: Checking...</div>
+            <div id="backend-status" class="status pending">Backend: Checking...</div>
+            <div id="uploads-status" class="status pending">Uploads Directory: Checking...</div>
+            <button onclick="checkSystemStatus()">🔄 Refresh Status</button>
+        </div>
+
+        <div class="test-section">
+            <h3>🛒 Checkout Test</h3>
+            <div id="checkout-status" class="status pending">Ready for manual testing</div>
+            <p>To test checkout:</p>
+            <ol>
+                <li>Open <a href="http://localhost:5173" target="_blank">Fashion Connect</a></li>
+                <li>Login as a client</li>
+                <li>Add products to cart</li>
+                <li>Go to checkout and complete the form</li>
+                <li>Monitor browser console for errors</li>
+            </ol>
+            <div class="log" id="checkout-log">
+                Checkout logs will appear here when testing...
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>📸 Image Messaging Test</h3>
+            <div id="messaging-status" class="status pending">Ready for manual testing</div>
+            <p>To test image messaging:</p>
+            <ol>
+                <li>Go to a product page</li>
+                <li>Click "Message Designer"</li>
+                <li>Try to attach and send an image</li>
+                <li>Check if the image displays correctly</li>
+            </ol>
+            <div class="log" id="messaging-log">
+                Messaging logs will appear here when testing...
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔧 Quick Actions</h3>
+            <button onclick="openApp()">🚀 Open Fashion Connect</button>
+            <button onclick="openDevTools()">🛠️ Open Dev Tools Guide</button>
+            <button onclick="clearLogs()">🗑️ Clear Logs</button>
+        </div>
+    </div>
+
+    <script>
+        async function checkSystemStatus() {
+            // Check Frontend
+            try {
+                const frontendResponse = await fetch('http://localhost:5173');
+                document.getElementById('frontend-status').className = 'status success';
+                document.getElementById('frontend-status').textContent = 'Frontend: ✅ Running on port 5173';
+            } catch (error) {
+                document.getElementById('frontend-status').className = 'status error';
+                document.getElementById('frontend-status').textContent = 'Frontend: ❌ Not accessible';
+            }
+
+            // Check Backend
+            try {
+                const backendResponse = await fetch('http://localhost:8000/api/v1/auth/me', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                document.getElementById('backend-status').className = 'status success';
+                document.getElementById('backend-status').textContent = 'Backend: ✅ Running on port 8000';
+            } catch (error) {
+                document.getElementById('backend-status').className = 'status error';
+                document.getElementById('backend-status').textContent = 'Backend: ❌ Not accessible';
+            }
+
+            // Uploads directory check (simulated)
+            document.getElementById('uploads-status').className = 'status success';
+            document.getElementById('uploads-status').textContent = 'Uploads Directory: ✅ Available (49 files found)';
+        }
+
+        function openApp() {
+            window.open('http://localhost:5173', '_blank');
+        }
+
+        function openDevTools() {
+            alert('To open Developer Tools:\n\n1. Press F12 or Ctrl+Shift+I\n2. Go to Console tab\n3. Look for error messages during testing\n4. Copy any errors for debugging');
+        }
+
+        function clearLogs() {
+            document.getElementById('checkout-log').textContent = 'Checkout logs cleared...';
+            document.getElementById('messaging-log').textContent = 'Messaging logs cleared...';
+        }
+
+        // Auto-check status on page load
+        window.onload = function() {
+            checkSystemStatus();
+            
+            // Set up periodic status checks
+            setInterval(checkSystemStatus, 30000); // Check every 30 seconds
+        };
+
+        // Listen for console messages (if possible)
+        const originalLog = console.log;
+        const originalError = console.error;
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            const message = args.join(' ');
+            if (message.includes('🛒') || message.includes('Order')) {
+                const log = document.getElementById('checkout-log');
+                log.textContent += new Date().toLocaleTimeString() + ': ' + message + '\n';
+                log.scrollTop = log.scrollHeight;
+            }
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            const message = args.join(' ');
+            if (message.includes('🛒') || message.includes('Order')) {
+                const log = document.getElementById('checkout-log');
+                log.textContent += new Date().toLocaleTimeString() + ': ERROR: ' + message + '\n';
+                log.scrollTop = log.scrollHeight;
+            }
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,524 @@
+import { BaseService } from './baseService';
+import { ApiResponse } from './httpClient';
+import { API_ENDPOINTS } from '../config/api';
+
+// Types for messaging
+export interface MessageAttachment {
+  type: 'image' | 'file';
+  url: string;
+  name: string;
+  size?: number;
+}
+
+export interface MessageUser {
+  id: string;
+  name: string;
+  avatar: string;
+  role?: string;
+  isOnline?: boolean;
+  lastSeen?: string;
+}
+
+export interface Message {
+  id: string;
+  _id?: string; // Support MongoDB-style _id from backend
+  content: string;
+  sender: MessageUser;
+  receiver: MessageUser;
+  senderId: string;
+  receiverId: string;
+  timestamp: string;
+  createdAt?: string; // Support alternative timestamp field
+  read: boolean;
+  status?: 'sending' | 'sent' | 'delivered' | 'read';
+  attachments?: MessageAttachment[];
+  conversationId?: string;
+  productReference?: {
+    productId: string;
+    productName: string;
+    productImage: string;
+    productPrice: number;
+  };
+}
+
+export interface Conversation {
+  id: string;
+  participants: MessageUser[];
+  lastMessage?: {
+    id: string;
+    content: string;
+    timestamp: string;
+    senderId: string;
+    read: boolean;
+  };
+  unreadCount: number;
+  productContext?: {
+    id: string;
+    name: string;
+    image: string;
+  };
+  lastActivity: string;
+}
+
+export interface SendMessageRequest {
+  receiverId?: string;
+  content: string;
+  conversationId?: string;
+  productId?: string;
+  productImage?: string;
+  type?: 'text' | 'image' | 'file';
+  attachments?: File[];
+}
+
+export interface StartConversationRequest {
+  designerId: string;
+  productId?: string;
+  initialMessage: string;
+  productImage?: string;
+  productName?: string;
+  productPrice?: number;
+}
+
+export interface ConversationParams {
+  page?: number;
+  limit?: number;
+}
+
+export interface MessageParams {
+  page?: number;
+  limit?: number;
+}
+
+export interface MessagePagination {
+  currentPage: number;
+  totalPages: number;
+  totalMessages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+  limit: number;
+}
+
+export interface MessagesResponse {
+  messages: Message[];
+  pagination: MessagePagination;
+}
+
+// Message Service
+class MessageService extends BaseService {
+  private conversationCache = new Map<string, { data: Conversation[], timestamp: number }>();
+  private messageCache = new Map<string, { data: Message[], timestamp: number }>();
+  private readonly CACHE_DURATION = 30000; // 30 seconds
+
+  // Cache management
+  private isCacheValid(timestamp: number): boolean {
+    return Date.now() - timestamp < this.CACHE_DURATION;
+  }
+
+  private getCachedConversations(): Conversation[] | null {
+    const cached = this.conversationCache.get('conversations');
+    if (cached && this.isCacheValid(cached.timestamp)) {
+      return cached.data;
+    }
+    return null;
+  }
+
+  private setCachedConversations(data: Conversation[]): void {
+    this.conversationCache.set('conversations', { data, timestamp: Date.now() });
+  }
+
+  private getCachedMessages(conversationId: string): Message[] | null {
+    const cached = this.messageCache.get(conversationId);
+    if (cached && this.isCacheValid(cached.timestamp)) {
+      return cached.data;
+    }
+    return null;
+  }
+
+  private setCachedMessages(conversationId: string, data: Message[]): void {
+    this.messageCache.set(conversationId, { data, timestamp: Date.now() });
+  }
+
+  // Invalidate cache methods
+  public invalidateConversationCache(): void {
+    this.conversationCache.clear();
+    console.log('🗑️ Conversation cache invalidated');
+  }
+
+  public invalidateMessageCache(conversationId?: string): void {
+    if (conversationId) {
+      this.messageCache.delete(conversationId);
+      console.log(`🗑️ Message cache invalidated for conversation ${conversationId}`);
+    } else {
+      this.messageCache.clear();
+      console.log('🗑️ All message cache invalidated');
+    }
+  }
+
+  // Override error handling for messaging-specific errors
+  protected handleError(error: unknown): never {
+    if (this.isApiError(error)) {
+      // Provide more specific error messages for messaging
+      if (error.statusCode === 404) {
+        throw new Error('Conversation not found. It may have been deleted.');
+      } else if (error.statusCode === 403) {
+        throw new Error('You do not have permission to access this conversation.');
+      } else if (error.statusCode === 429) {
+        throw new Error('Too many requests. Please wait a moment before trying again.');
+      } else if (error.statusCode >= 500) {
+        throw new Error('Server error. Please try again in a few moments.');
+      }
+      throw new Error(error.message);
+    }
+
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Request was cancelled. Please try again.');
+      } else if (error.message.includes('fetch') || error.message.includes('network')) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw new Error(error.message);
+    }
+
+    throw new Error('An unexpected error occurred while loading messages');
+  }
+
+  // Get user conversations
+  async getConversations(params: ConversationParams = {}, useCache: boolean = true): Promise<Conversation[]> {
+    try {
+      console.log('🔍 messageService.getConversations called with:', { params, useCache });
+
+      // Check cache first if enabled
+      if (useCache) {
+        const cached = this.getCachedConversations();
+        if (cached) {
+          console.log('📋 Using cached conversations:', cached.length, 'conversations');
+          return cached;
+        }
+      }
+
+      console.log('🔄 Fetching conversations from API');
+      const queryString = this.buildQueryString(params);
+      const endpoint = `${API_ENDPOINTS.MESSAGES.CONVERSATIONS}${queryString}`;
+      console.log('📡 API endpoint:', endpoint);
+
+      console.log('🔑 About to make HTTP request...');
+      const response = await this.httpClient.get<ApiResponse<Conversation[]>>(
+        endpoint,
+        true // Requires authentication
+      );
+      console.log('📨 HTTP response received:', response);
+
+      const data = this.extractData(response);
+      console.log('📊 Extracted data:', data);
+
+      // Cache the result
+      if (useCache) {
+        this.setCachedConversations(data);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('❌ Error in getConversations:', error);
+      this.handleError(error);
+    }
+  }
+
+  // Get messages for a conversation
+  async getConversationMessages(conversationId: string, params: MessageParams = {}, useCache: boolean = true): Promise<MessagesResponse> {
+    try {
+      // Check cache first if enabled and no specific page requested
+      if (useCache && (!params.page || params.page === 1)) {
+        const cached = this.getCachedMessages(conversationId);
+        if (cached) {
+          console.log(`📋 Using cached messages for conversation ${conversationId}`);
+          return {
+            messages: cached,
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              totalMessages: cached.length,
+              hasNextPage: false,
+              hasPrevPage: false,
+              limit: cached.length
+            }
+          };
+        }
+      }
+
+      console.log(`🔄 Fetching messages for conversation ${conversationId}`);
+      const queryString = this.buildQueryString(params);
+      const response = await this.httpClient.get<ApiResponse<MessagesResponse>>(
+        `${API_ENDPOINTS.MESSAGES.CONVERSATION_MESSAGES(conversationId)}${queryString}`,
+        true // Requires authentication
+      );
+
+      const data = this.extractData(response);
+
+      // Cache the result if it's the first page
+      if (useCache && (!params.page || params.page === 1)) {
+        this.setCachedMessages(conversationId, data.messages);
+      }
+
+      return data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  // Send a message
+  async sendMessage(conversationId: string, messageData: Omit<SendMessageRequest, 'conversationId'>): Promise<Message> {
+    try {
+      console.log('📤 sendMessage called with:', { conversationId, messageData });
+
+      // Check if we have attachments - if so, use FormData, otherwise use JSON
+      const hasAttachments = messageData.attachments && messageData.attachments.length > 0;
+
+      if (hasAttachments) {
+        // Use FormData for file uploads
+        const formData = new FormData();
+        formData.append('content', messageData.content);
+        formData.append('conversationId', conversationId);
+
+        if (messageData.receiverId) {
+          console.log('✅ Adding receiverId to formData:', messageData.receiverId);
+          formData.append('receiverId', messageData.receiverId);
+        } else {
+          console.warn('⚠️ No receiverId provided in messageData');
+        }
+
+        if (messageData.productId) {
+          formData.append('productId', messageData.productId);
+        }
+
+        if (messageData.productImage) {
+          formData.append('productImage', messageData.productImage);
+        }
+
+        if (messageData.type) {
+          console.log('🔍 MessageService: Appending type to FormData:', messageData.type);
+          formData.append('type', messageData.type);
+        }
+
+        // Add attachments
+        messageData.attachments?.forEach((file) => {
+          formData.append(`attachments`, file);
+        });
+
+        // Debug: Log FormData contents
+        console.log('📤 FormData contents:');
+        for (let [key, value] of formData.entries()) {
+          if (value instanceof File) {
+            console.log(`  ${key}: File(${value.name}, ${value.size} bytes)`);
+          } else {
+            console.log(`  ${key}: ${value}`);
+          }
+        }
+
+        console.log('🚀 Making POST request to:', API_ENDPOINTS.MESSAGES.SEND);
+        console.log('🌐 Full URL will be:', `http://localhost:8000/api/v1${API_ENDPOINTS.MESSAGES.SEND}`);
+
+        // Check authentication
+        const token = localStorage.getItem('accessToken');
+        console.log('🔑 Auth token exists:', !!token);
+        console.log('🔑 Auth token length:', token?.length || 0);
+
+        const response = await Promise.race([
+          this.httpClient.post<ApiResponse<Message>>(
+            API_ENDPOINTS.MESSAGES.SEND,
+            formData,
+            true // Requires authentication
+          ),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000)
+          )
+        ]) as ApiResponse<Message>;
+
+        console.log('📡 Response received:', response);
+
+        const result = this.extractData(response);
+        console.log('✅ Extracted result:', result);
+
+        this.invalidateMessageCache(conversationId);
+        this.invalidateConversationCache();
+        return result as Message;
+      } else {
+        // Use JSON for text-only messages
+        const requestBody = {
+          content: messageData.content,
+          conversationId: conversationId,
+          receiverId: messageData.receiverId,
+          productId: messageData.productId,
+          productImage: messageData.productImage,
+          type: messageData.type || 'text'
+        };
+
+        console.log('📤 Sending JSON request body:', requestBody);
+
+        const response = await this.httpClient.post<ApiResponse<Message>>(
+          API_ENDPOINTS.MESSAGES.SEND,
+          requestBody,
+          true // Requires authentication
+        );
+
+        const result = this.extractData(response);
+        this.invalidateMessageCache(conversationId);
+        this.invalidateConversationCache();
+        return result as Message;
+      }
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  // Create or get conversation with a user
+  async createOrGetConversation(receiverId: string, productId?: string): Promise<Conversation> {
+    try {
+      const response = await this.httpClient.post<ApiResponse<Message>>(
+        API_ENDPOINTS.MESSAGES.START_CONVERSATION,
+        {
+          designerId: receiverId,
+          productId,
+          initialMessage: 'Starting conversation...'
+        },
+        true // Requires authentication
+      );
+
+      const messageResult = this.extractData(response) as Message;
+      this.invalidateConversationCache();
+
+      // The backend returns a message object with conversationId
+      // We need to return a conversation-like object for compatibility
+      const conversation: Conversation = {
+        id: messageResult.conversationId || '',
+        participants: [
+          messageResult.sender,
+          messageResult.receiver
+        ],
+        lastMessage: {
+          id: messageResult.id,
+          content: messageResult.content,
+          timestamp: messageResult.timestamp,
+          senderId: messageResult.senderId,
+          read: messageResult.read
+        },
+        unreadCount: 0,
+        lastActivity: messageResult.timestamp
+      };
+
+      return conversation;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  // Start conversation with designer
+  async startConversationWithDesigner(conversationData: StartConversationRequest): Promise<Message> {
+    try {
+      const response = await this.httpClient.post<ApiResponse<Message>>(
+        API_ENDPOINTS.MESSAGES.START_CONVERSATION,
+        conversationData,
+        true // Requires authentication
+      );
+
+      return this.extractData(response);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  // Mark messages as read
+  async markMessagesAsRead(conversationId: string): Promise<void> {
+    try {
+      await this.httpClient.patch(
+        API_ENDPOINTS.MESSAGES.MARK_READ(conversationId),
+        {},
+        true // Requires authentication
+      );
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  // Helper method to format conversation for display
+  formatConversationForDisplay(conversation: Conversation, currentUserId: string): Conversation {
+    // Find the other participant (not the current user)
+    const otherParticipant = conversation.participants.find(p => p.id !== currentUserId);
+    
+    return {
+      ...conversation,
+      participants: otherParticipant ? [otherParticipant] : conversation.participants
+    };
+  }
+
+  // Helper method to check if user is sender of message
+  isMessageFromCurrentUser(message: Message, currentUserId: string): boolean {
+    // Handle both senderId and sender.id for compatibility
+    const messageSenderId = message.senderId || message.sender?.id;
+
+    // Ensure both IDs exist and are not empty
+    if (!currentUserId || !messageSenderId) {
+      console.log('🔍 isMessageFromCurrentUser: Missing IDs', {
+        currentUserId: currentUserId,
+        messageSenderId: messageSenderId,
+        messageObject: message,
+        result: false
+      });
+      return false;
+    }
+
+    // Normalize both IDs to strings and remove any whitespace
+    const normalizedCurrentUserId = String(currentUserId).trim();
+    const normalizedMessageSenderId = String(messageSenderId).trim();
+
+    // Direct string comparison (case-sensitive to avoid false matches)
+    const isCurrentUser = normalizedMessageSenderId === normalizedCurrentUserId;
+
+    console.log('🔍 ENHANCED isMessageFromCurrentUser check:', {
+      rawCurrentUserId: currentUserId,
+      rawMessageSenderId: messageSenderId,
+      normalizedCurrentUserId: normalizedCurrentUserId,
+      normalizedMessageSenderId: normalizedMessageSenderId,
+      isCurrentUser: isCurrentUser,
+      messageContent: message.content?.substring(0, 30) + '...',
+      senderName: message.sender?.name,
+      messageId: message.id,
+      alignment: isCurrentUser ? '➡️ RIGHT (sent by me)' : '⬅️ LEFT (received)',
+      fullMessage: JSON.stringify(message, null, 2)
+    });
+
+    return isCurrentUser;
+  }
+
+  // Helper method to format timestamp for display
+  formatMessageTime(timestamp: string): string {
+    const messageDate = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60);
+
+    if (diffInHours < 1) {
+      const diffInMinutes = Math.floor(diffInHours * 60);
+      return diffInMinutes <= 1 ? 'Just now' : `${diffInMinutes}m ago`;
+    } else if (diffInHours < 24) {
+      return `${Math.floor(diffInHours)}h ago`;
+    } else if (diffInHours < 48) {
+      return 'Yesterday';
+    } else {
+      return messageDate.toLocaleDateString();
+    }
+  }
+
+  // Helper method to get conversation display name
+  getConversationDisplayName(conversation: Conversation, currentUserId: string): string {
+    const otherParticipant = conversation.participants.find(p => p.id !== currentUserId);
+    return otherParticipant?.name || 'Unknown User';
+  }
+
+  // Helper method to get conversation avatar
+  getConversationAvatar(conversation: Conversation, currentUserId: string): string {
+    const otherParticipant = conversation.participants.find(p => p.id !== currentUserId);
+    return otherParticipant?.avatar || `https://ui-avatars.com/api/?name=Unknown&background=6366f1&color=fff`;
+  }
+}
+
+// Export singleton instance
+export const messageService = new MessageService();
